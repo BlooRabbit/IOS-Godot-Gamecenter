@@ -2,7 +2,7 @@
 
 on:
   push:
-    tags: ["v*"]         # push a tag like v0.2.1 to build
+    tags: ["v*"]              # e.g. v0.2.2
   workflow_dispatch:
 
 jobs:
@@ -15,8 +15,6 @@ jobs:
 
     env:
       PROJECT_DIR: .
-      SCHEME: GodotStoreKit2                  # framework / scheme name
-      PROJECT: godot-storekit2.xcodeproj      # Xcode project at repo root
       OUTDIR: dist/${{ matrix.config }}
 
     steps:
@@ -26,7 +24,7 @@ jobs:
           fetch-depth: 0
           submodules: recursive
 
-      - name: Set up Xcode
+      - name: Set up Xcode 16
         uses: maxim-lobanov/setup-xcode@v1
         with:
           xcode-version: "16.x"
@@ -34,12 +32,49 @@ jobs:
       - name: Show Xcode version
         run: xcodebuild -version
 
+      # 🔎 Auto-detect the .xcodeproj and a *shared* scheme.
+      # If no shared scheme is found, this step explains how to fix it.
+      - name: Detect project & scheme
+        id: detect
+        shell: bash
+        run: |
+          set -euo pipefail
+          PROJECT="$(git ls-files '*.xcodeproj' | head -n1 || true)"
+          if [ -z "$PROJECT" ]; then
+            echo "No .xcodeproj found at repo root. Set PROJECT_DIR or add the project." >&2
+            exit 1
+          fi
+          echo "Found project: $PROJECT"
+
+          # List schemes as JSON and extract names with Python
+          SCHEMES="$(xcodebuild -list -json -project "$PROJECT" | python3 - <<'PY'
+import sys, json
+d=json.load(sys.stdin)
+print("\n".join(d.get("project",{}).get("schemes",[])))
+PY
+)"
+          echo "Available shared schemes:"
+          echo "$SCHEMES"
+
+          FIRST="$(echo "$SCHEMES" | head -n1)"
+          if [ -z "$FIRST" ]; then
+            echo "::error::No *shared* schemes found. In Xcode: Product > Scheme > Manage Schemes... check 'Shared' for your framework target, then commit the file(s) under:
+*.xcodeproj/xcshareddata/xcschemes/*.xcscheme" 
+            exit 1
+          fi
+
+          echo "Using scheme: $FIRST"
+          {
+            echo "project=$PROJECT"
+            echo "scheme=$FIRST"
+          } >> "$GITHUB_OUTPUT"
+
       - name: Archive (device)
         run: |
           cd "$PROJECT_DIR"
           xcodebuild archive \
-            -project "$PROJECT" \
-            -scheme "$SCHEME" \
+            -project "${{ steps.detect.outputs.project }}" \
+            -scheme "${{ steps.detect.outputs.scheme }}" \
             -configuration ${{ matrix.config }} \
             -destination "generic/platform=iOS" \
             -archivePath build/ios-${{ matrix.config }} \
@@ -49,8 +84,8 @@ jobs:
         run: |
           cd "$PROJECT_DIR"
           xcodebuild archive \
-            -project "$PROJECT" \
-            -scheme "$SCHEME" \
+            -project "${{ steps.detect.outputs.project }}" \
+            -scheme "${{ steps.detect.outputs.scheme }}" \
             -configuration ${{ matrix.config }} \
             -destination "generic/platform=iOS Simulator" \
             -archivePath build/iossim-${{ matrix.config }} \
@@ -60,10 +95,12 @@ jobs:
         run: |
           cd "$PROJECT_DIR"
           mkdir -p "$OUTDIR"
+          # Framework name is the scheme name for framework targets
+          FRAMEWORK="${{ steps.detect.outputs.scheme }}"
           xcodebuild -create-xcframework \
-            -framework build/ios-${{ matrix.config }}/Products/Library/Frameworks/${SCHEME}.framework \
-            -framework build/iossim-${{ matrix.config }}/Products/Library/Frameworks/${SCHEME}.framework \
-            -output "$OUTDIR/${SCHEME}.xcframework"
+            -framework build/ios-${{ matrix.config }}/Products/Library/Frameworks/${FRAMEWORK}.framework \
+            -framework build/iossim-${{ matrix.config }}/Products/Library/Frameworks/${FRAMEWORK}.framework \
+            -output "$OUTDIR/${FRAMEWORK}.xcframework"
 
       - name: Copy or generate .gdip
         shell: bash
@@ -72,6 +109,7 @@ jobs:
           cd "$PROJECT_DIR"
           mkdir -p "$OUTDIR"
           GDIP_FILE="$(git ls-files '*.gdip' | head -n1 || true)"
+          FRAMEWORK="${{ steps.detect.outputs.scheme }}"
           if [ -n "$GDIP_FILE" ]; then
             cp "$GDIP_FILE" "$OUTDIR"/
           else
@@ -81,28 +119,28 @@ jobs:
               '  "version": "0.2",' \
               '  "author": "BlooRabbit",' \
               '  "platform": "ios",' \
-              '  "binary": "GodotStoreKit2.xcframework",' \
-              '  "classes": ["GodotStoreKit2"],' \
-              '  "dependencies": { "frameworks": ["StoreKit"] }' \
-              '}' > "$OUTDIR/${SCHEME}.gdip"
+              "  \"binary\": \"${FRAMEWORK}.xcframework\"," \
+              "  \"classes\": [\"${FRAMEWORK}\"]" \
+              '}' > "$OUTDIR/${FRAMEWORK}.gdip"
           fi
 
       - name: Package as ios/plugins
         run: |
           cd "$PROJECT_DIR"
+          FRAMEWORK="${{ steps.detect.outputs.scheme }}"
           mkdir -p package-${{ matrix.config }}/ios/plugins
-          cp -R "$OUTDIR/${SCHEME}.xcframework" package-${{ matrix.config }}/ios/plugins/
+          cp -R "$OUTDIR/${FRAMEWORK}.xcframework" package-${{ matrix.config }}/ios/plugins/
           cp "$OUTDIR"/*.gdip package-${{ matrix.config }}/ios/plugins/
           cd package-${{ matrix.config }}
-          zip -r "../godot-storekit2-${{ matrix.config }}.zip" ios
+          zip -r "../${FRAMEWORK}-${{ matrix.config }}.zip" ios
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: godot-storekit2-${{ matrix.config }}
+          name: ${{ steps.detect.outputs.scheme }}-${{ matrix.config }}
           path: |
             ${{ env.PROJECT_DIR }}/${{ env.OUTDIR }}
-            ${{ env.PROJECT_DIR }}/godot-storekit2-${{ matrix.config }}.zip
+            ${{ env.PROJECT_DIR }}/${{ steps.detect.outputs.scheme }}-${{ matrix.config }}.zip
 
   release:
     needs: build
@@ -118,6 +156,6 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            artifacts/**/godot-storekit2-Debug.zip
-            artifacts/**/godot-storekit2-Release.zip
+            artifacts/**/*-Debug.zip
+            artifacts/**/*-Release.zip
           generate_release_notes: true
