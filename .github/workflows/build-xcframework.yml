@@ -1,1 +1,123 @@
-﻿
+﻿name: Build iOS xcframeworks
+
+on:
+  push:
+    tags: ["v*"]         # push a tag like v0.2.1 to build
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-14
+
+    strategy:
+      matrix:
+        config: [Debug, Release]
+
+    env:
+      PROJECT_DIR: .
+      SCHEME: GodotStoreKit2                  # framework / scheme name
+      PROJECT: godot-storekit2.xcodeproj      # Xcode project at repo root
+      OUTDIR: dist/${{ matrix.config }}
+
+    steps:
+      - name: Checkout (with submodules)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          submodules: recursive
+
+      - name: Set up Xcode
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: "26.0.0"
+
+      - name: Show Xcode version
+        run: xcodebuild -version
+
+      - name: Archive (device)
+        run: |
+          cd "$PROJECT_DIR"
+          xcodebuild archive \
+            -project "$PROJECT" \
+            -scheme "$SCHEME" \
+            -configuration ${{ matrix.config }} \
+            -destination "generic/platform=iOS" \
+            -archivePath build/ios-${{ matrix.config }} \
+            SKIP_INSTALL=NO BUILD_LIBRARY_FOR_DISTRIBUTION=YES
+
+      - name: Archive (simulator)
+        run: |
+          cd "$PROJECT_DIR"
+          xcodebuild archive \
+            -project "$PROJECT" \
+            -scheme "$SCHEME" \
+            -configuration ${{ matrix.config }} \
+            -destination "generic/platform=iOS Simulator" \
+            -archivePath build/iossim-${{ matrix.config }} \
+            SKIP_INSTALL=NO BUILD_LIBRARY_FOR_DISTRIBUTION=YES
+
+      - name: Create .xcframework
+        run: |
+          cd "$PROJECT_DIR"
+          mkdir -p "$OUTDIR"
+          xcodebuild -create-xcframework \
+            -framework build/ios-${{ matrix.config }}/Products/Library/Frameworks/${SCHEME}.framework \
+            -framework build/iossim-${{ matrix.config }}/Products/Library/Frameworks/${SCHEME}.framework \
+            -output "$OUTDIR/${SCHEME}.xcframework"
+
+      - name: Copy or generate .gdip
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "$PROJECT_DIR"
+          mkdir -p "$OUTDIR"
+          GDIP_FILE="$(git ls-files '*.gdip' | head -n1 || true)"
+          if [ -n "$GDIP_FILE" ]; then
+            cp "$GDIP_FILE" "$OUTDIR"/
+          else
+            printf '%s\n' \
+              '{' \
+              '  "name": "Godot StoreKit 2",' \
+              '  "version": "0.2",' \
+              '  "author": "BlooRabbit",' \
+              '  "platform": "ios",' \
+              '  "binary": "GodotStoreKit2.xcframework",' \
+              '  "classes": ["GodotStoreKit2"],' \
+              '  "dependencies": { "frameworks": ["StoreKit"] }' \
+              '}' > "$OUTDIR/${SCHEME}.gdip"
+          fi
+
+      - name: Package as ios/plugins
+        run: |
+          cd "$PROJECT_DIR"
+          mkdir -p package-${{ matrix.config }}/ios/plugins
+          cp -R "$OUTDIR/${SCHEME}.xcframework" package-${{ matrix.config }}/ios/plugins/
+          cp "$OUTDIR"/*.gdip package-${{ matrix.config }}/ios/plugins/
+          cd package-${{ matrix.config }}
+          zip -r "../godot-storekit2-${{ matrix.config }}.zip" ios
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: godot-storekit2-${{ matrix.config }}
+          path: |
+            ${{ env.PROJECT_DIR }}/${{ env.OUTDIR }}
+            ${{ env.PROJECT_DIR }}/godot-storekit2-${{ matrix.config }}.zip
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/')
+    steps:
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            artifacts/**/godot-storekit2-Debug.zip
+            artifacts/**/godot-storekit2-Release.zip
+          generate_release_notes: true
