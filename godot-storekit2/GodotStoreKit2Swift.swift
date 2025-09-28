@@ -2,7 +2,7 @@
 //  GodotStoreKit2Swift.swift
 //  godot-storekit2
 //
-//  Minimal StoreKit 2 bridge helpers for serialization.
+//  StoreKit 2 bridge helpers for serialization.
 //  Tested with Xcode 16.2 (iOS SDK 18.2), Swift 5.9
 //
 
@@ -11,10 +11,45 @@ import StoreKit
 
 @objc public final class GodotStoreKit2Swift: NSObject {
 
-    // MARK: - Public API (example entry points you can call from Objective-C / Godot)
+    // MARK: - Obj-C exposed entry points
+
+    /// Load products by identifiers and return an NSArray<NSDictionary> (Obj-C friendly).
+    /// Any error is returned as an NSString in the second parameter.
+    @objc public func loadAndSerializeProducts(withIDs ids: [String],
+                                               completion: @escaping (NSArray?, NSString?) -> Void) {
+        Task.detached { [weak self] in
+            guard let self else { return }
+            do {
+                let storeProducts = try await Product.products(for: ids)
+                let dicts = self.serialize(products: storeProducts) as NSArray
+                completion(dicts, nil)
+            } catch {
+                completion(nil, NSString(string: String(describing: error)))
+            }
+        }
+    }
+
+    /// Same as above, but returns a JSON string (UTF-8) for easy transport over C/Obj-C bridges.
+    @objc public func loadProductsJSON(withIDs ids: [String],
+                                       completion: @escaping (NSString?, NSString?) -> Void) {
+        Task.detached { [weak self] in
+            guard let self else { return }
+            do {
+                let storeProducts = try await Product.products(for: ids)
+                let dicts = self.serialize(products: storeProducts)
+                let data = try JSONSerialization.data(withJSONObject: dicts, options: [])
+                let json = String(data: data, encoding: .utf8) ?? "[]"
+                completion(NSString(string: json), nil)
+            } catch {
+                completion(nil, NSString(string: String(describing: error)))
+            }
+        }
+    }
+
+    // MARK: - Swift helpers (NOT @objc; they use Swift-only types)
 
     /// Serialize a StoreKit 2 Product to a basic dictionary you can pass across a bridge.
-    @objc public func serialize(product: Product) -> [String: Any] {
+    public func serialize(product: Product) -> [String: Any] {
         var d: [String: Any] = [:]
         d["id"]            = product.id
         d["display_name"]  = product.displayName
@@ -30,7 +65,7 @@ import StoreKit
     }
 
     /// Convenience: serialize an array of products.
-    @objc public func serialize(products: [Product]) -> [[String: Any]] {
+    public func serialize(products: [Product]) -> [[String: Any]] {
         return products.map { serialize(product: $0) }
     }
 
@@ -49,16 +84,14 @@ import StoreKit
             d["introductory_offer"] = serialize(offer: intro)
         }
 
-        // Promotional offers (if any)
+        // Promotional offers (if available on this SDK)
         if #available(iOS 16.4, *) {
-            // In modern SDKs this property exists. Guard with availability for safety.
             let promos = sub.promotionalOffers
             if !promos.isEmpty {
                 d["promotional_offers"] = promos.map { serialize(offer: $0) }
             }
         }
 
-        // Subscription group identifier (if needed downstream)
         if let groupID = sub.subscriptionGroupID {
             d["subscription_group_id"] = groupID
         }
@@ -75,14 +108,13 @@ import StoreKit
         d["period_unit"]  = unitString(period.unit)
 
         // Offer metadata
-        d["type"]         = offerTypeString(offer.type)             // "introductory" or "promotional"
-        d["payment_mode"] = paymentModeString(offer.paymentMode)    // "free_trial" | "pay_as_you_go" | "pay_up_front"
+        d["type"]         = offerTypeString(offer.type)          // "introductory" | "promotional"
+        d["payment_mode"] = paymentModeString(offer.paymentMode) // "free_trial" | "pay_as_you_go" | "pay_up_front"
 
-        // Price
-        // displayPrice is the localized string; for numeric breakdown, StoreKit exposes Price via Decimal & currencyCode on newer SDKs.
+        // Localized price string
         d["display_price"] = offer.displayPrice
 
-        // Optional: number of periods billed for pay-as-you-go
+        // Optional: number of periods (pay-as-you-go)
         if let numPeriods = offer.numberOfPeriods {
             d["number_of_periods"] = numPeriods
         }
@@ -90,7 +122,7 @@ import StoreKit
         return d
     }
 
-    // MARK: - Mappers (exhaustive switches, no @unknown default)
+    // MARK: - Mappers (exhaustive switches)
 
     private func unitString(_ unit: Product.SubscriptionPeriod.Unit) -> String {
         switch unit {
@@ -122,24 +154,6 @@ import StoreKit
         case .nonRenewable:   return "non_renewable"
         case .nonConsumable:  return "non_consumable"
         case .consumable:     return "consumable"
-        }
-    }
-}
-
-// MARK: - (Optional) Simple fetch helpers you can call before serialization
-
-extension GodotStoreKit2Swift {
-    /// Load products by identifiers and return their serialized representation.
-    /// Call from Obj-C/Godot via bridging. Errors are flattened to a string for simplicity.
-    @objc public func loadAndSerializeProducts(withIDs ids: [String], completion: @escaping (_ products: [[String: Any]]?, _ error: String?) -> Void) {
-        Task.detached {
-            do {
-                let storeProducts = try await Product.products(for: ids)
-                let serialized = self.serialize(products: storeProducts)
-                completion(serialized, nil)
-            } catch {
-                completion(nil, String(describing: error))
-            }
         }
     }
 }
