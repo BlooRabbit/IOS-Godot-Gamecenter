@@ -2,7 +2,7 @@
 
 on:
   push:
-    tags: ["v*"]              # e.g. v0.2.2
+    tags: ["v*"]
   workflow_dispatch:
 
 jobs:
@@ -14,7 +14,9 @@ jobs:
         config: [Debug, Release]
 
     env:
-      PROJECT_DIR: .
+      # Optional overrides (set these if auto-detect picks the wrong one)
+      PROJECT_FILE: ""     # e.g. path/to/YourProject.xcodeproj  OR  path/to/YourWorkspace.xcworkspace
+      SCHEME_NAME: ""      # e.g. YourFramework
       OUTDIR: dist/${{ matrix.config }}
 
     steps:
@@ -29,74 +31,167 @@ jobs:
         with:
           xcode-version: "16.x"
 
-      - name: Show Xcode version
-        run: xcodebuild -version
+      - name: Print repo tree (top level)
+        run: |
+          echo "Top-level tree:"
+          ls -la
+          echo ""
+          echo "Any xcschemes committed?"
+          git ls-files '*xcshareddata/xcschemes/*.xcscheme' || true
 
-      # 🔎 Auto-detect the .xcodeproj and a *shared* scheme.
-      # If no shared scheme is found, this step explains how to fix it.
-      - name: Detect project & scheme
+      - name: Detect project/workspace and shared scheme
         id: detect
         shell: bash
         run: |
           set -euo pipefail
-          PROJECT="$(git ls-files '*.xcodeproj' | head -n1 || true)"
-          if [ -z "$PROJECT" ]; then
-            echo "No .xcodeproj found at repo root. Set PROJECT_DIR or add the project." >&2
-            exit 1
-          fi
-          echo "Found project: $PROJECT"
 
-          # List schemes as JSON and extract names with Python
-          SCHEMES="$(xcodebuild -list -json -project "$PROJECT" | python3 - <<'PY'
+          # 1) If user provided explicit overrides, honor them.
+          if [ -n "${PROJECT_FILE}" ] && [ -n "${SCHEME_NAME}" ]; then
+            echo "project=${PROJECT_FILE}" >> "$GITHUB_OUTPUT"
+            echo "scheme=${SCHEME_NAME}" >> "$GITHUB_OUTPUT"
+            echo "Detection skipped: using user overrides."
+            exit 0
+          fi
+
+          # 2) Collect candidates (prefer workspaces, then projects), search RECURSIVELY.
+          mapfile -t WORKSPACES < <(git ls-files '**/*.xcworkspace')
+          mapfile -t PROJECTS   < <(git ls-files '**/*.xcodeproj')
+
+          echo "Found workspaces:"
+          printf ' - %s\n' "${WORKSPACES[@]:-<none>}"
+          echo "Found projects:"
+          printf ' - %s\n' "${PROJECTS[@]:-<none>}"
+
+          choose_scheme_from () {
+            local kind="$1" ; shift
+            for path in "$@"; do
+              echo ""
+              echo "Checking $kind: $path"
+              if [ "$kind" = "workspace" ]; then
+                SCHEMES_JSON="$(xcodebuild -list -json -workspace "$path" 2>/dev/null || true)"
+              else
+                SCHEMES_JSON="$(xcodebuild -list -json -project "$path" 2>/dev/null || true)"
+              fi
+
+              if [ -z "$SCHEMES_JSON" ]; then
+                echo "  (no JSON output)"
+                continue
+              fi
+
+              echo "$SCHEMES_JSON" | python3 - <<'PY'
+import sys, json
+try:
+    d=json.load(sys.stdin)
+    schemes = d.get("workspace",{}).get("schemes") or d.get("project",{}).get("schemes") or []
+    print("\n".join(schemes))
+except Exception as e:
+    pass
+PY
+              mapfile -t SCHEMES < <(echo "$SCHEMES_JSON" | python3 - <<'PY'
 import sys, json
 d=json.load(sys.stdin)
-print("\n".join(d.get("project",{}).get("schemes",[])))
+schemes = d.get("workspace",{}).get("schemes") or d.get("project",{}).get("schemes") or []
+print("\n".join(schemes))
 PY
-)"
-          echo "Available shared schemes:"
-          echo "$SCHEMES"
+)
 
-          FIRST="$(echo "$SCHEMES" | head -n1)"
-          if [ -z "$FIRST" ]; then
-            echo "::error::No *shared* schemes found. In Xcode: Product > Scheme > Manage Schemes... check 'Shared' for your framework target, then commit the file(s) under:
-*.xcodeproj/xcshareddata/xcschemes/*.xcscheme" 
-            exit 1
+              if [ "${#SCHEMES[@]}" -gt 0 ]; then
+                # Pick the first scheme
+                CHOSEN="${SCHEMES[0]}"
+                echo ""
+                echo "==> Using $kind:"
+                echo "    file:   $path"
+                echo "    scheme: $CHOSEN"
+                echo "project=$path" >> "$GITHUB_OUTPUT"
+                echo "scheme=$CHOSEN" >> "$GITHUB_OUTPUT"
+                return 0
+              fi
+            done
+            return 1
+          }
+
+          # Prefer workspace if any has shared schemes, else project.
+          if [ "${#WORKSPACES[@]}" -gt 0 ] && choose_scheme_from "workspace" "${WORKSPACES[@]}"; then
+            exit 0
+          fi
+          if [ "${#PROJECTS[@]}" -gt 0 ] && choose_scheme_from "project" "${PROJECTS[@]}"; then
+            exit 0
           fi
 
-          echo "Using scheme: $FIRST"
-          {
-            echo "project=$PROJECT"
-            echo "scheme=$FIRST"
-          } >> "$GITHUB_OUTPUT"
+          echo "::error::No shared schemes detected. Ensure your scheme is Shared and committed under: *.xcodeproj/xcshareddata/xcschemes/*.xcscheme or *.xcworkspace/xcshareddata/xcschemes/*.xcscheme"
+          echo "Tip: In Xcode: Product > Scheme > Manage Schemes… -> check 'Shared' and commit the files shown by 'git ls-files *xcshareddata/xcschemes/*.xcscheme'."
+          exit 1
+
+      - name: Show detected settings
+        run: |
+          echo "Detected project/workspace: ${{ steps.detect.outputs.project }}"
+          echo "Detected scheme:           ${{ steps.detect.outputs.scheme }}"
 
       - name: Archive (device)
         run: |
-          cd "$PROJECT_DIR"
-          xcodebuild archive \
-            -project "${{ steps.detect.outputs.project }}" \
-            -scheme "${{ steps.detect.outputs.scheme }}" \
-            -configuration ${{ matrix.config }} \
-            -destination "generic/platform=iOS" \
-            -archivePath build/ios-${{ matrix.config }} \
-            SKIP_INSTALL=NO BUILD_LIBRARY_FOR_DISTRIBUTION=YES
+          FILE="${{ steps.detect.outputs.project }}"
+          SCHEME="${{ steps.detect.outputs.scheme }}"
+          if [[ "$FILE" == *.xcworkspace ]]; then
+            xcodebuild archive \
+              -workspace "$FILE" \
+              -scheme "$SCHEME" \
+              -configuration ${{ matrix.config }} \
+              -destination "generic/platform=iOS" \
+              -archivePath build/ios-${{ matrix.config }} \
+              SKIP_INSTALL=NO BUILD_LIBRARY_FOR_DISTRIBUTION=YES
+          else
+            xcodebuild archive \
+              -project "$FILE" \
+              -scheme "$SCHEME" \
+              -configuration ${{ matrix.config }} \
+              -destination "generic/platform=iOS" \
+              -archivePath build/ios-${{ matrix.config }} \
+              SKIP_INSTALL=NO BUILD_LIBRARY_FOR_DISTRIBUTION=YES
+          fi
 
       - name: Archive (simulator)
         run: |
-          cd "$PROJECT_DIR"
-          xcodebuild archive \
-            -project "${{ steps.detect.outputs.project }}" \
-            -scheme "${{ steps.detect.outputs.scheme }}" \
-            -configuration ${{ matrix.config }} \
-            -destination "generic/platform=iOS Simulator" \
-            -archivePath build/iossim-${{ matrix.config }} \
-            SKIP_INSTALL=NO BUILD_LIBRARY_FOR_DISTRIBUTION=YES
+          FILE="${{ steps.detect.outputs.project }}"
+          SCHEME="${{ steps.detect.outputs.scheme }}"
+          if [[ "$FILE" == *.xcworkspace ]]; then
+            xcodebuild archive \
+              -workspace "$FILE" \
+              -scheme "$SCHEME" \
+              -configuration ${{ matrix.config }} \
+              -destination "generic/platform=iOS Simulator" \
+              -archivePath build/iossim-${{ matrix.config }} \
+              SKIP_INSTALL=NO BUILD_LIBRARY_FOR_DISTRIBUTION=YES
+          else
+            xcodebuild archive \
+              -project "$FILE" \
+              -scheme "$SCHEME" \
+              -configuration ${{ matrix.config }} \
+              -destination "generic/platform=iOS Simulator" \
+              -archivePath build/iossim-${{ matrix.config }} \
+              SKIP_INSTALL=NO BUILD_LIBRARY_FOR_DISTRIBUTION=YES
+          fi
 
       - name: Create .xcframework
+        shell: bash
         run: |
-          cd "$PROJECT_DIR"
-          mkdir -p "$OUTDIR"
-          # Framework name is the scheme name for framework targets
+          set -euo pipefail
           FRAMEWORK="${{ steps.detect.outputs.scheme }}"
+          mkdir -p "$OUTDIR"
+
+          # If this is NOT a framework target, the framework path won’t exist.
+          if [ ! -d "build/ios-${{ matrix.config }}/Products/Library/Frameworks/${FRAMEWORK}.framework" ]; then
+            echo "::error::Expected framework not found at build/ios-${{ matrix.config }}/Products/Library/Frameworks/${FRAMEWORK}.framework"
+            echo "Available device products:"
+            find build/ios-${{ matrix.config }}/Products -maxdepth 3 -type d -print || true
+            exit 65
+          fi
+          if [ ! -d "build/iossim-${{ matrix.config }}/Products/Library/Frameworks/${FRAMEWORK}.framework" ]; then
+            echo "::error::Expected simulator framework not found at build/iossim-${{ matrix.config }}/Products/Library/Frameworks/${FRAMEWORK}.framework"
+            echo "Available simulator products:"
+            find build/iossim-${{ matrix.config }}/Products -maxdepth 3 -type d -print || true
+            exit 65
+          fi
+
           xcodebuild -create-xcframework \
             -framework build/ios-${{ matrix.config }}/Products/Library/Frameworks/${FRAMEWORK}.framework \
             -framework build/iossim-${{ matrix.config }}/Products/Library/Frameworks/${FRAMEWORK}.framework \
@@ -106,17 +201,16 @@ PY
         shell: bash
         run: |
           set -euo pipefail
-          cd "$PROJECT_DIR"
+          FRAMEWORK="${{ steps.detect.outputs.scheme }}"
           mkdir -p "$OUTDIR"
           GDIP_FILE="$(git ls-files '*.gdip' | head -n1 || true)"
-          FRAMEWORK="${{ steps.detect.outputs.scheme }}"
           if [ -n "$GDIP_FILE" ]; then
             cp "$GDIP_FILE" "$OUTDIR"/
           else
             printf '%s\n' \
               '{' \
-              '  "name": "Godot StoreKit 2",' \
-              '  "version": "0.2",' \
+              "  \"name\": \"${FRAMEWORK}\"," \
+              '  "version": "0.1",' \
               '  "author": "BlooRabbit",' \
               '  "platform": "ios",' \
               "  \"binary\": \"${FRAMEWORK}.xcframework\"," \
@@ -125,22 +219,22 @@ PY
           fi
 
       - name: Package as ios/plugins
+        shell: bash
         run: |
-          cd "$PROJECT_DIR"
+          set -euo pipefail
           FRAMEWORK="${{ steps.detect.outputs.scheme }}"
           mkdir -p package-${{ matrix.config }}/ios/plugins
           cp -R "$OUTDIR/${FRAMEWORK}.xcframework" package-${{ matrix.config }}/ios/plugins/
           cp "$OUTDIR"/*.gdip package-${{ matrix.config }}/ios/plugins/
-          cd package-${{ matrix.config }}
-          zip -r "../${FRAMEWORK}-${{ matrix.config }}.zip" ios
+          (cd package-${{ matrix.config }} && zip -r "../${FRAMEWORK}-${{ matrix.config }}.zip" ios)
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
           name: ${{ steps.detect.outputs.scheme }}-${{ matrix.config }}
           path: |
-            ${{ env.PROJECT_DIR }}/${{ env.OUTDIR }}
-            ${{ env.PROJECT_DIR }}/${{ steps.detect.outputs.scheme }}-${{ matrix.config }}.zip
+            ${{ env.OUTDIR }}
+            ${{ steps.detect.outputs.scheme }}-${{ matrix.config }}.zip
 
   release:
     needs: build
@@ -151,7 +245,6 @@ PY
         uses: actions/download-artifact@v4
         with:
           path: artifacts
-
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
