@@ -50,7 +50,7 @@ jobs:
             -configuration ${{ matrix.config }} \
             -destination "generic/platform=iOS Simulator" \
             -archivePath build/iossim-${{ matrix.config }} \
-            SKIP_INSTALL=NO BUILD_LIBRARY_FOR_DISTRIBUTION=YES
+            SKIP_INSTALL=NO BUILD_LIBRARY_FOR_DISTRIBUTION=NO
 
       # Find the produced .frameworks (prefer ones matching the scheme, else first)
       - name: Create .xcframework
