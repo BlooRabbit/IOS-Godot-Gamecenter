@@ -40,7 +40,7 @@ jobs:
             -configuration ${{ matrix.config }} \
             -destination "generic/platform=iOS" \
             -archivePath build/ios-${{ matrix.config }} \
-            SKIP_INSTALL=NO BUILD_LIBRARY_FOR_DISTRIBUTION=YES
+            SKIP_INSTALL=NO BUILD_LIBRARY_FOR_DISTRIBUTION=NO
 
       - name: Archive (simulator)
         run: |
@@ -52,38 +52,86 @@ jobs:
             -archivePath build/iossim-${{ matrix.config }} \
             SKIP_INSTALL=NO BUILD_LIBRARY_FOR_DISTRIBUTION=NO
 
-      # Find the produced .frameworks (prefer ones matching the scheme, else first)
+      # Create an .xcframework:
+      # 1) prefer frameworks if produced
+      # 2) otherwise fall back to static libraries (.a) + headers
       - name: Create .xcframework
         shell: bash
         run: |
           set -euo pipefail
           mkdir -p "$OUTDIR"
 
-          echo "Device products:"
-          find build/ios-${{ matrix.config }}/Products -type d -name "*.framework" -maxdepth 6 | sort
-          echo "Simulator products:"
-          find build/iossim-${{ matrix.config }}/Products -type d -name "*.framework" -maxdepth 6 | sort
+          echo "Device products (.frameworks):"
+          find build/ios-${{ matrix.config }}/Products -type d -name "*.framework" -maxdepth 6 | sort || true
+          echo "Simulator products (.frameworks):"
+          find build/iossim-${{ matrix.config }}/Products -type d -name "*.framework" -maxdepth 6 | sort || true
 
           dev_fw="$(find build/ios-${{ matrix.config }}/Products -type d -name "${SCHEME_NAME}.framework" -maxdepth 6 | head -n1 || true)"
           sim_fw="$(find build/iossim-${{ matrix.config }}/Products -type d -name "${SCHEME_NAME}.framework" -maxdepth 6 | head -n1 || true)"
 
-          # Fallback to first framework if names differ from scheme
-          if [ -z "$dev_fw" ]; then dev_fw="$(find build/ios-${{ matrix.config }}/Products -type d -name "*.framework" -maxdepth 6 | head -n1 || true)"; fi
-          if [ -z "$sim_fw" ]; then sim_fw="$(find build/iossim-${{ matrix.config }}/Products -type d -name "*.framework" -maxdepth 6 | head -n1 || true)"; fi
+          if [ -n "$dev_fw" ] && [ -n "$sim_fw" ]; then
+            fwname="$(basename "$dev_fw" .framework)"
+            echo "Using frameworks -> $fwname"
+            xcodebuild -create-xcframework \
+              -framework "$dev_fw" \
+              -framework "$sim_fw" \
+              -output "$OUTDIR/${fwname}.xcframework"
+            echo "framework_name=$fwname" >> "$GITHUB_OUTPUT"
+          else
+            echo "Frameworks not found; falling back to static libraries (.a) + headers."
 
-          if [ -z "$dev_fw" ] || [ -z "$sim_fw" ]; then
-            echo "::error::Could not find a pair of .frameworks in the archives."
-            exit 65
+            DEV_INSTALL="build/ios-${{ matrix.config }}/InstallationBuildProductsLocation"
+            SIM_INSTALL="build/iossim-${{ matrix.config }}/InstallationBuildProductsLocation"
+
+            # Locate libraries
+            dev_lib="$(/usr/bin/find "$DEV_INSTALL" -type f -name "lib${SCHEME_NAME}.a" -print -quit || true)"
+            sim_lib="$(/usr/bin/find "$SIM_INSTALL" -type f -name "lib${SCHEME_NAME}.a" -print -quit || true)"
+            if [ -z "$dev_lib" ]; then
+              dev_lib="$(/usr/bin/find build/ios-${{ matrix.config }}/Products -type f -name "lib${SCHEME_NAME}.a" -print -quit || true)"
+            fi
+            if [ -z "$sim_lib" ]; then
+              sim_lib="$(/usr/bin/find build/iossim-${{ matrix.config }}/Products -type f -name "lib${SCHEME_NAME}.a" -print -quit || true)"
+            fi
+
+            if [ -z "$dev_lib" ] || [ -z "$sim_lib" ]; then
+              echo "::error::Could not find lib${SCHEME_NAME}.a for both device and simulator."
+              echo "Device .a files:"
+              /usr/bin/find build/ios-${{ matrix.config }} -name "lib*.a" -maxdepth 6 -print || true
+              echo "Simulator .a files:"
+              /usr/bin/find build/iossim-${{ matrix.config }} -name "lib*.a" -maxdepth 6 -print || true
+              exit 65
+            fi
+
+            echo "Device lib:     $dev_lib"
+            echo "Simulator lib:  $sim_lib"
+
+            # Locate public headers (Installation location first, then fallback)
+            dev_headers="$(/usr/bin/find "$DEV_INSTALL" -type d -path '*/usr/local/include' -print -quit || true)"
+            sim_headers="$(/usr/bin/find "$SIM_INSTALL" -type d -path '*/usr/local/include' -print -quit || true)"
+            if [ -z "$dev_headers" ]; then
+              dev_headers="$(/usr/bin/find build/ios-${{ matrix.config }}/Products -type d -name include -print -quit || true)"
+            fi
+            if [ -z "$sim_headers" ]; then
+              sim_headers="$(/usr/bin/find build/iossim-${{ matrix.config }}/Products -type d -name include -print -quit || true)"
+            fi
+
+            if [ -z "$dev_headers" ] || [ -z "$sim_headers" ]; then
+              echo "::error::Could not find public headers directory for device and/or simulator."
+              echo "Device include dirs:"
+              /usr/bin/find build/ios-${{ matrix.config }} -type d -name include -maxdepth 6 -print || true
+              echo "Simulator include dirs:"
+              /usr/bin/find build/iossim-${{ matrix.config }} -type d -name include -maxdepth 6 -print || true
+              exit 66
+            fi
+
+            fwname="${SCHEME_NAME}"
+            echo "Creating xcframework (static libs) -> $fwname"
+            xcodebuild -create-xcframework \
+              -library "$dev_lib" -headers "$dev_headers" \
+              -library "$sim_lib" -headers "$sim_headers" \
+              -output "$OUTDIR/${fwname}.xcframework"
+            echo "framework_name=$fwname" >> "$GITHUB_OUTPUT"
           fi
-
-          fwname="$(basename "$dev_fw" .framework)"
-          echo "Using framework name: $fwname"
-          xcodebuild -create-xcframework \
-            -framework "$dev_fw" \
-            -framework "$sim_fw" \
-            -output "$OUTDIR/${fwname}.xcframework"
-
-          echo "framework_name=$fwname" >> "$GITHUB_OUTPUT"
 
       - name: Copy or generate .gdip
         shell: bash
@@ -102,7 +150,8 @@ jobs:
               '  "author": "BlooRabbit",' \
               '  "platform": "ios",' \
               "  \"binary\": \"${fwname}.xcframework\"," \
-              "  \"classes\": [\"GodotStoreKit2\"]" \
+              "  \"classes\": [\"GodotStoreKit2\"]," \
+              '  "dependencies": { "frameworks": ["StoreKit"] }' \
               '}' > "$OUTDIR/${fwname}.gdip"
           fi
 
