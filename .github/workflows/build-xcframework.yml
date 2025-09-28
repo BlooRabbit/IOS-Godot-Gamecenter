@@ -32,6 +32,22 @@ jobs:
       - name: Show Xcode version
         run: xcodebuild -version
 
+      # --- NEW: Patch StoreKit 2 API for Xcode 16 (Product.currentEntitlements -> Transaction.currentEntitlements) ---
+      - name: Patch StoreKit API to use Transaction.currentEntitlements
+        shell: bash
+        run: |
+          set -euo pipefail
+          SWIFT_FILE="godot-storekit2/GodotStoreKit2Swift.swift"
+          if [ -f "$SWIFT_FILE" ]; then
+            echo "Patching $SWIFT_FILE"
+            # Replace occurrences of `product.currentEntitlements` with a filter on Transaction.currentEntitlements
+            # This transforms: for await vr in product.currentEntitlements { ... }
+            # into:            for await vr in Transaction.currentEntitlements where vr.productID == product.id { ... }
+            perl -0777 -pe 's/for\s+await\s+(\w+)\s+in\s+product\.currentEntitlements\s*\{/for await $1 in Transaction.currentEntitlements where $1.productID == product.id {/g' -i "$SWIFT_FILE"
+          else
+            echo "::warning::$SWIFT_FILE not found; skipping patch."
+          fi
+
       - name: Archive (device, iOS)
         run: |
           xcodebuild archive \
@@ -40,7 +56,7 @@ jobs:
             -configuration ${{ matrix.config }} \
             -destination "generic/platform=iOS" \
             -archivePath build/ios-${{ matrix.config }} \
-            SKIP_INSTALL=NO BUILD_LIBRARY_FOR_DISTRIBUTION=NO
+            SKIP_INSTALL=NO BUILD_LIBRARY_FOR_DISTRIBUTION=NO SWIFT_VERSION=5.9
 
       - name: Archive (simulator)
         run: |
@@ -50,11 +66,9 @@ jobs:
             -configuration ${{ matrix.config }} \
             -destination "generic/platform=iOS Simulator" \
             -archivePath build/iossim-${{ matrix.config }} \
-            SKIP_INSTALL=NO BUILD_LIBRARY_FOR_DISTRIBUTION=NO
+            SKIP_INSTALL=NO BUILD_LIBRARY_FOR_DISTRIBUTION=NO SWIFT_VERSION=5.9
 
-      # Create an .xcframework:
-      # 1) prefer frameworks if produced
-      # 2) otherwise fall back to static libraries (.a) + headers
+      # Find the produced products and create an .xcframework
       - name: Create .xcframework
         shell: bash
         run: |
@@ -83,7 +97,6 @@ jobs:
             DEV_INSTALL="build/ios-${{ matrix.config }}/InstallationBuildProductsLocation"
             SIM_INSTALL="build/iossim-${{ matrix.config }}/InstallationBuildProductsLocation"
 
-            # Locate libraries
             dev_lib="$(/usr/bin/find "$DEV_INSTALL" -type f -name "lib${SCHEME_NAME}.a" -print -quit || true)"
             sim_lib="$(/usr/bin/find "$SIM_INSTALL" -type f -name "lib${SCHEME_NAME}.a" -print -quit || true)"
             if [ -z "$dev_lib" ]; then
@@ -105,7 +118,6 @@ jobs:
             echo "Device lib:     $dev_lib"
             echo "Simulator lib:  $sim_lib"
 
-            # Locate public headers (Installation location first, then fallback)
             dev_headers="$(/usr/bin/find "$DEV_INSTALL" -type d -path '*/usr/local/include' -print -quit || true)"
             sim_headers="$(/usr/bin/find "$SIM_INSTALL" -type d -path '*/usr/local/include' -print -quit || true)"
             if [ -z "$dev_headers" ]; then
