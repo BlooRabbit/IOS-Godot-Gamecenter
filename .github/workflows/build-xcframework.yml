@@ -29,7 +29,7 @@ jobs:
       - name: Set up Xcode
         uses: maxim-lobanov/setup-xcode@v1
         with:
-          xcode-version: "26.0.0"
+          xcode-version: "16.x"
 
       - name: Show Xcode version
         run: xcodebuild -version
