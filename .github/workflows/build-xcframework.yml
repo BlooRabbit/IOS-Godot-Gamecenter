@@ -1,0 +1,185 @@
+﻿name: Build iOS xcframeworks (hard-coded to godot-storekit2)
+
+on:
+  push:
+    tags: ["v*"]     # e.g. v0.2.5
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-14
+    strategy:
+      matrix:
+        config: [Debug, Release]
+
+    env:
+      PROJECT_FILE: godot-storekit2.xcodeproj
+      SCHEME_NAME: godot-storekit2
+      OUTDIR: dist/${{ matrix.config }}
+
+    steps:
+      - name: Checkout (with submodules)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          submodules: recursive
+
+      - name: Set up Xcode
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: "16.x"
+
+      - name: Show Xcode version
+        run: xcodebuild -version
+
+      # --- NEW: Patch StoreKit 2 API for Xcode 16 (Product.currentEntitlements -> Transaction.currentEntitlements) ---
+      - name: Patch StoreKit API to use Transaction.currentEntitlements
+        shell: bash
+        run: |
+          set -euo pipefail
+          SWIFT_FILE="godot-storekit2/GodotStoreKit2Swift.swift"
+          if [ -f "$SWIFT_FILE" ]; then
+            echo "Patching $SWIFT_FILE"
+            # Replace occurrences of `product.currentEntitlements` with a filter on Transaction.currentEntitlements
+            # This transforms: for await vr in product.currentEntitlements { ... }
+            # into:            for await vr in Transaction.currentEntitlements where vr.productID == product.id { ... }
+            perl -0777 -pe 's/for\s+await\s+(\w+)\s+in\s+product\.currentEntitlements\s*\{/for await $1 in Transaction.currentEntitlements where $1.productID == product.id {/g' -i "$SWIFT_FILE"
+          else
+            echo "::warning::$SWIFT_FILE not found; skipping patch."
+          fi
+
+      - name: Archive (device, iOS)
+        run: |
+          xcodebuild archive \
+            -project "$PROJECT_FILE" \
+            -scheme "$SCHEME_NAME" \
+            -configuration ${{ matrix.config }} \
+            -destination "generic/platform=iOS" \
+            -archivePath build/ios-${{ matrix.config }} \
+            SKIP_INSTALL=NO BUILD_LIBRARY_FOR_DISTRIBUTION=NO SWIFT_VERSION=5.9
+
+      - name: Archive (simulator)
+        run: |
+          xcodebuild archive \
+            -project "$PROJECT_FILE" \
+            -scheme "$SCHEME_NAME" \
+            -configuration ${{ matrix.config }} \
+            -destination "generic/platform=iOS Simulator" \
+            -archivePath build/iossim-${{ matrix.config }} \
+            SKIP_INSTALL=NO BUILD_LIBRARY_FOR_DISTRIBUTION=NO SWIFT_VERSION=5.9
+
+      # Find the produced products and create an .xcframework
+      - name: Create .xcframework
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$OUTDIR"
+
+          echo "Device products (.frameworks):"
+          find build/ios-${{ matrix.config }}/Products -type d -name "*.framework" -maxdepth 6 | sort || true
+          echo "Simulator products (.frameworks):"
+          find build/iossim-${{ matrix.config }}/Products -type d -name "*.framework" -maxdepth 6 | sort || true
+
+          dev_fw="$(find build/ios-${{ matrix.config }}/Products -type d -name "${SCHEME_NAME}.framework" -maxdepth 6 | head -n1 || true)"
+          sim_fw="$(find build/iossim-${{ matrix.config }}/Products -type d -name "${SCHEME_NAME}.framework" -maxdepth 6 | head -n1 || true)"
+
+          if [ -n "$dev_fw" ] && [ -n "$sim_fw" ]; then
+            fwname="$(basename "$dev_fw" .framework)"
+            echo "Using frameworks -> $fwname"
+            xcodebuild -create-xcframework \
+              -framework "$dev_fw" \
+              -framework "$sim_fw" \
+              -output "$OUTDIR/${fwname}.xcframework"
+            echo "framework_name=$fwname" >> "$GITHUB_OUTPUT"
+          else
+            echo "Frameworks not found; falling back to static libraries (.a) + headers."
+
+            DEV_INSTALL="build/ios-${{ matrix.config }}/InstallationBuildProductsLocation"
+            SIM_INSTALL="build/iossim-${{ matrix.config }}/InstallationBuildProductsLocation"
+
+            dev_lib="$(/usr/bin/find "$DEV_INSTALL" -type f -name "lib${SCHEME_NAME}.a" -print -quit || true)"
+            sim_lib="$(/usr/bin/find "$SIM_INSTALL" -type f -name "lib${SCHEME_NAME}.a" -print -quit || true)"
+            if [ -z "$dev_lib" ]; then
+              dev_lib="$(/usr/bin/find build/ios-${{ matrix.config }}/Products -type f -name "lib${SCHEME_NAME}.a" -print -quit || true)"
+            fi
+            if [ -z "$sim_lib" ]; then
+              sim_lib="$(/usr/bin/find build/iossim-${{ matrix.config }}/Products -type f -name "lib${SCHEME_NAME}.a" -print -quit || true)"
+            fi
+
+            if [ -z "$dev_lib" ] || [ -z "$sim_lib" ]; then
+              echo "::error::Could not find lib${SCHEME_NAME}.a for both device and simulator."
+              echo "Device .a files:"
+              /usr/bin/find build/ios-${{ matrix.config }} -name "lib*.a" -maxdepth 6 -print || true
+              echo "Simulator .a files:"
+              /usr/bin/find build/iossim-${{ matrix.config }} -name "lib*.a" -maxdepth 6 -print || true
+              exit 65
+            fi
+
+            echo "Device lib:     $dev_lib"
+            echo "Simulator lib:  $sim_lib"
+
+            dev_headers="$(/usr/bin/find "$DEV_INSTALL" -type d -path '*/usr/local/include' -print -quit || true)"
+            sim_headers="$(/usr/bin/find "$SIM_INSTALL" -type d -path '*/usr/local/include' -print -quit || true)"
+            if [ -z "$dev_headers" ]; then
+              dev_headers="$(/usr/bin/find build/ios-${{ matrix.config }}/Products -type d -name include -print -quit || true)"
+            fi
+            if [ -z "$sim_headers" ]; then
+              sim_headers="$(/usr/bin/find build/iossim-${{ matrix.config }}/Products -type d -name include -print -quit || true)"
+            fi
+
+            if [ -z "$dev_headers" ] || [ -z "$sim_headers" ]; then
+              echo "::error::Could not find public headers directory for device and/or simulator."
+              echo "Device include dirs:"
+              /usr/bin/find build/ios-${{ matrix.config }} -type d -name include -maxdepth 6 -print || true
+              echo "Simulator include dirs:"
+              /usr/bin/find build/iossim-${{ matrix.config }} -type d -name include -maxdepth 6 -print || true
+              exit 66
+            fi
+
+            fwname="${SCHEME_NAME}"
+            echo "Creating xcframework (static libs) -> $fwname"
+            xcodebuild -create-xcframework \
+              -library "$dev_lib" -headers "$dev_headers" \
+              -library "$sim_lib" -headers "$sim_headers" \
+              -output "$OUTDIR/${fwname}.xcframework"
+            echo "framework_name=$fwname" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Copy or generate .gdip
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$OUTDIR"
+          fwname="$(basename "$(find "$OUTDIR" -maxdepth 1 -name '*.xcframework' | head -n1)" .xcframework)"
+          gdip="$(git ls-files '*.gdip' | head -n1 || true)"
+          if [ -n "$gdip" ]; then
+            cp "$gdip" "$OUTDIR"/
+          else
+            printf '%s\n' \
+              '{' \
+              "  \"name\": \"${fwname}\"," \
+              '  "version": "0.2",' \
+              '  "author": "BlooRabbit",' \
+              '  "platform": "ios",' \
+              "  \"binary\": \"${fwname}.xcframework\"," \
+              "  \"classes\": [\"GodotStoreKit2\"]," \
+              '  "dependencies": { "frameworks": ["StoreKit"] }' \
+              '}' > "$OUTDIR/${fwname}.gdip"
+          fi
+
+      - name: Package as ios/plugins
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p package-${{ matrix.config }}/ios/plugins
+          cp -R "$OUTDIR"/*.xcframework package-${{ matrix.config }}/ios/plugins/
+          cp "$OUTDIR"/*.gdip package-${{ matrix.config }}/ios/plugins/
+          (cd package-${{ matrix.config }} && zip -r "../${SCHEME_NAME}-${{ matrix.config }}.zip" ios)
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.SCHEME_NAME }}-${{ matrix.config }}
+          path: |
+            ${{ env.OUTDIR }}
+            ${{ env.SCHEME_NAME }}-${{ matrix.config }}.zip
