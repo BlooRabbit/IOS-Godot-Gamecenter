@@ -20,14 +20,10 @@ mkdir -p "$OUTPUT_DIR"
 
 # Function to build a configuration (Debug / Release)
 build_config() {
-    CONFIG="$1"
-
-    # Make a lowercase version of CONFIG (Debug -> debug, Release -> release)
-    CONFIG_LC=$(printf "%s" "$CONFIG" | tr '[:upper:]' '[:lower:]')
-
+    CONFIG=$1
     ARCHIVE_PATH="$BUILD_DIR/${CONFIG}_ios.xcarchive"
     FRAMEWORK_PATH="$ARCHIVE_PATH/Products/Library/Frameworks/$FRAMEWORK_NAME.framework"
-    XCOUTPUT="$OUTPUT_DIR/gamekit_${CONFIG_LC}.xcframework"
+    XCOUTPUT="$OUTPUT_DIR/gamekit_${CONFIG,,}.xcframework"
 
     echo ""
     echo "→ Building $CONFIG (iOS device arm64 only)..."
@@ -41,13 +37,15 @@ build_config() {
       SKIP_INSTALL=NO \
       BUILD_LIBRARY_FOR_DISTRIBUTION=YES \
       ONLY_ACTIVE_ARCH=NO \
-      ARCHS=arm64
+      ARCHS=arm64 \
+      > /dev/null
 
     echo "→ Creating XCFramework: $XCOUTPUT"
 
     xcodebuild -create-xcframework \
       -framework "$FRAMEWORK_PATH" \
-      -output "$XCOUTPUT"
+      -output "$XCOUTPUT" \
+      > /dev/null
 
     echo "✔ Finished $XCOUTPUT"
 }
@@ -59,5 +57,5 @@ build_config Release
 echo ""
 echo "======================================"
 echo "🎉 Done! XCFrameworks generated in:"
-echo "   $OUTPUT_DIR/"
+echo "   addons/gamekit/"
 echo "======================================"
