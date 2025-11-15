@@ -18,7 +18,7 @@
                BlueprintIdentifier = "5EF48ABB2E71AEE3007295F0"
                BuildableName = "libgodot-gamekit.a"
                BlueprintName = "godot-gamekit"
-               ReferencedContainer = "container:godot-storekit2.xcodeproj">
+               ReferencedContainer = "container:godot-gamekit.xcodeproj">
             </BuildableReference>
          </BuildActionEntry>
       </BuildActionEntries>
