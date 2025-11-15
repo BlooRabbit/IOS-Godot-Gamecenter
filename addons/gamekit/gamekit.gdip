@@ -1,0 +1,18 @@
+{
+  "name": "GameKit",
+  "description": "iOS Game Center support (auth, leaderboards)",
+  "author": "Your Name",
+  "version": "1.0",
+  "platform": "ios",
+  "script_name": "",
+  "ios": {
+    "bundled": true,
+    "dependencies": [
+      "addons/gamekit/gamekit_debug.xcframework",
+      "addons/gamekit/gamekit_release.xcframework"
+    ],
+    "plist": {
+      "UIRequiredDeviceCapabilities": [ "arm64" ]
+    }
+  }
+}
