@@ -16,8 +16,8 @@
             <BuildableReference
                BuildableIdentifier = "primary"
                BlueprintIdentifier = "5EF48ABB2E71AEE3007295F0"
-               BuildableName = "libgodot-storekit2.a"
-               BlueprintName = "godot-storekit2"
+               BuildableName = "libgodot-gamekit.a"
+               BlueprintName = "godot-gamekit"
                ReferencedContainer = "container:godot-storekit2.xcodeproj">
             </BuildableReference>
          </BuildActionEntry>
@@ -51,9 +51,9 @@
          <BuildableReference
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "5EF48ABB2E71AEE3007295F0"
-            BuildableName = "libgodot-storekit2.a"
-            BlueprintName = "godot-storekit2"
-            ReferencedContainer = "container:godot-storekit2.xcodeproj">
+            BuildableName = "libgodot-gamekit.a"
+            BlueprintName = "godot-gamekit"
+            ReferencedContainer = "container:godot-gamekit.xcodeproj">
          </BuildableReference>
       </MacroExpansion>
    </ProfileAction>

@@ -20,26 +20,26 @@
 
 /* Begin PBXFileReference section */
 		5E8599F42E7B00C500BB9BFD /* README.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = README.md; sourceTree = "<group>"; };
-		5EF48ABC2E71AEE3007295F0 /* libgodot-storekit2.a */ = {isa = PBXFileReference; explicitFileType = archive.ar; includeInIndex = 0; path = "libgodot-storekit2.a"; sourceTree = BUILT_PRODUCTS_DIR; };
+		5EF48ABC2E71AEE3007295F0 /* libgodot-gamekit.a */ = {isa = PBXFileReference; explicitFileType = archive.ar; includeInIndex = 0; path = "libgodot-gamekit.a"; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedGroupBuildPhaseMembershipExceptionSet section */
-		5EF48AC32E71AEE3007295F0 /* Exceptions for "godot-storekit2" folder in "Copy Files" phase from "godot-storekit2" target */ = {
+		5EF48AC32E71AEE3007295F0 /* Exceptions for "godot-gamekit" folder in "Copy Files" phase from "godot-gamekit" target */ = {
 			isa = PBXFileSystemSynchronizedGroupBuildPhaseMembershipExceptionSet;
 			buildPhase = 5EF48ABA2E71AEE3007295F0 /* CopyFiles */;
 			membershipExceptions = (
-				"godot-storekit2.h",
+				"godot-gamekit.h",
 			);
 		};
 /* End PBXFileSystemSynchronizedGroupBuildPhaseMembershipExceptionSet section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
-		5EF48ABE2E71AEE3007295F0 /* godot-storekit2 */ = {
+		5EF48ABE2E71AEE3007295F0 /* godot-gamekit */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			exceptions = (
-				5EF48AC32E71AEE3007295F0 /* Exceptions for "godot-storekit2" folder in "Copy Files" phase from "godot-storekit2" target */,
+				5EF48AC32E71AEE3007295F0 /* Exceptions for "godot-gamekit" folder in "Copy Files" phase from "godot-gamekit" target */,
 			);
-			path = "godot-storekit2";
+			path = "godot-gamekit";
 			sourceTree = "<group>";
 		};
 /* End PBXFileSystemSynchronizedRootGroup section */
@@ -59,7 +59,7 @@
 			isa = PBXGroup;
 			children = (
 				5E8599F42E7B00C500BB9BFD /* README.md */,
-				5EF48ABE2E71AEE3007295F0 /* godot-storekit2 */,
+				5EF48ABE2E71AEE3007295F0 /* godot-gamekit */,
 				5EF48ABD2E71AEE3007295F0 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -67,7 +67,7 @@
 		5EF48ABD2E71AEE3007295F0 /* Products */ = {
 			isa = PBXGroup;
 			children = (
-				5EF48ABC2E71AEE3007295F0 /* libgodot-storekit2.a */,
+				5EF48ABC2E71AEE3007295F0 /* libgodot-gamekit.a */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -75,9 +75,9 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
-		5EF48ABB2E71AEE3007295F0 /* godot-storekit2 */ = {
+		5EF48ABB2E71AEE3007295F0 /* godot-gamekit */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = 5EF48AC62E71AEE3007295F0 /* Build configuration list for PBXNativeTarget "godot-storekit2" */;
+			buildConfigurationList = 5EF48AC62E71AEE3007295F0 /* Build configuration list for PBXNativeTarget "godot-gamekit" */;
 			buildPhases = (
 				5EF48AB82E71AEE3007295F0 /* Sources */,
 				5EF48AB92E71AEE3007295F0 /* Frameworks */,
@@ -88,13 +88,13 @@
 			dependencies = (
 			);
 			fileSystemSynchronizedGroups = (
-				5EF48ABE2E71AEE3007295F0 /* godot-storekit2 */,
+				5EF48ABE2E71AEE3007295F0 /* godot-gamekit */,
 			);
-			name = "godot-storekit2";
+			name = "godot-gamekit";
 			packageProductDependencies = (
 			);
-			productName = "godot-storekit2";
-			productReference = 5EF48ABC2E71AEE3007295F0 /* libgodot-storekit2.a */;
+			productName = "godot-gamekit";
+			productReference = 5EF48ABC2E71AEE3007295F0 /* libgodot-gamekit.a */;
 			productType = "com.apple.product-type.library.static";
 		};
 /* End PBXNativeTarget section */
@@ -112,7 +112,7 @@
 					};
 				};
 			};
-			buildConfigurationList = 5EF48AB72E71AEE3007295F0 /* Build configuration list for PBXProject "godot-storekit2" */;
+			buildConfigurationList = 5EF48AB72E71AEE3007295F0 /* Build configuration list for PBXProject "godot-gamekit" */;
 			developmentRegion = en;
 			hasScannedForEncodings = 0;
 			knownRegions = (
@@ -126,7 +126,7 @@
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
-				5EF48ABB2E71AEE3007295F0 /* godot-storekit2 */,
+				5EF48ABB2E71AEE3007295F0 /* godot-gamekit */,
 			);
 		};
 /* End PBXProject section */
@@ -211,7 +211,7 @@
 					"-D_DEBUG",
 					"-DDISABLE_FORCED_INLINE",
 				);
-				PRODUCT_NAME = "godot-storekit2";
+				PRODUCT_NAME = "godot-gamekit";
 				SDKROOT = iphoneos;
 				SKIP_INSTALL = NO;
 				TARGETED_DEVICE_FAMILY = "iPhone, iPad";
@@ -277,7 +277,7 @@
 					"-DNDEBUG",
 					"-DNS_BLOCK_ASSERTIONS=1",
 				);
-				PRODUCT_NAME = "godot-storekit2";
+				PRODUCT_NAME = "godot-gamekit";
 				SDKROOT = iphoneos;
 				SKIP_INSTALL = NO;
 				TARGETED_DEVICE_FAMILY = "iPhone, iPad";
@@ -323,7 +323,7 @@
 				);
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SKIP_INSTALL = NO;
-				SWIFT_OBJC_BRIDGING_HEADER = "godot-storekit2/godot-storekit2-Bridging-Header.h";
+				SWIFT_OBJC_BRIDGING_HEADER = "godot-gamekit/godot-gamekit-Bridging-Header.h";
 				SWIFT_OBJC_INTEROP_MODE = objcxx;
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
 				SWIFT_VERSION = 6.0;
@@ -366,7 +366,7 @@
 				);
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SKIP_INSTALL = NO;
-				SWIFT_OBJC_BRIDGING_HEADER = "godot-storekit2/godot-storekit2-Bridging-Header.h";
+				SWIFT_OBJC_BRIDGING_HEADER = "godot-gamekit/godot-gamekit-Bridging-Header.h";
 				SWIFT_OBJC_INTEROP_MODE = objcxx;
 				SWIFT_VERSION = 6.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
@@ -376,7 +376,7 @@
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
-		5EF48AB72E71AEE3007295F0 /* Build configuration list for PBXProject "godot-storekit2" */ = {
+		5EF48AB72E71AEE3007295F0 /* Build configuration list for PBXProject "godot-gamekit" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				5EF48AC42E71AEE3007295F0 /* Debug */,
@@ -385,7 +385,7 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
-		5EF48AC62E71AEE3007295F0 /* Build configuration list for PBXNativeTarget "godot-storekit2" */ = {
+		5EF48AC62E71AEE3007295F0 /* Build configuration list for PBXNativeTarget "godot-gamekit" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				5EF48AC72E71AEE3007295F0 /* Debug */,
