@@ -5,7 +5,7 @@ import UIKit
 // Expose this Swift class to Obj-C as "GodotGameKitProxy"
 @objc(GodotGameKitProxy)
 @objcMembers
-public final class GodotGameKit: NSObject {
+public final class GodotGameKit: NSObject, @unchecked Sendable {
 
     public static let shared = GodotGameKit()
 
