@@ -18,28 +18,31 @@ void GodotGameKit::_bind_methods() {
 	// Methods
 	ClassDB::bind_method(D_METHOD("initialize_game_center"), &GodotGameKit::initialize_game_center);
 	ClassDB::bind_method(D_METHOD("is_authenticated"), &GodotGameKit::is_authenticated);
-	ClassDB::bind_method(D_METHOD("load_achievement_names"), &GodotGameKit::load_achievement_names);
+
 	ClassDB::bind_method(
 			D_METHOD("report_achievement", "achievement_id", "percent_complete"),
 			&GodotGameKit::report_achievement,
 			DEFVAL(100.0));
 
 	ClassDB::bind_method(D_METHOD("load_achievements"), &GodotGameKit::load_achievements);
+	ClassDB::bind_method(D_METHOD("load_achievement_names"), &GodotGameKit::load_achievement_names);
 
 	// Signals
+
+	// Game Center initialization: Dictionary { initialized: bool, error: String }
 	ADD_SIGNAL(MethodInfo("game_center_initialized", PropertyInfo(Variant::DICTIONARY, "data")));
 
-	// achievement: Dictionary {
-	//   "identifier": String
-	//   "percent_complete": float
-	//   "completed": bool
-	//   "last_reported": float (Unix time) or absent
-	//   "error": String
+	// achievement_reported: Dictionary {
+	//   identifier: String, percent_complete: float, completed: bool,
+	//   last_reported: float (unix time, optional), error: String
 	// }
 	ADD_SIGNAL(MethodInfo("achievement_reported", PropertyInfo(Variant::DICTIONARY, "achievement")));
-	ADD_SIGNAL(MethodInfo("achievement_names_loaded", PropertyInfo(Variant::ARRAY, "names")));
-	// achievements: Array of Dictionaries with same keys as above
+
+	// achievements_loaded: Array of the same dictionaries as above
 	ADD_SIGNAL(MethodInfo("achievements_loaded", PropertyInfo(Variant::ARRAY, "achievements")));
+
+	// achievement_names_loaded: Array of { identifier: String, title: String, error: String }
+	ADD_SIGNAL(MethodInfo("achievement_names_loaded", PropertyInfo(Variant::ARRAY, "names")));
 }
 
 Signal GodotGameKit::initialize_game_center() {
@@ -83,11 +86,24 @@ Signal GodotGameKit::load_achievements() {
 		proxy = [GodotGameKitProxy shared];
 	}
 
-	[proxy loadAchievementsWithCompletion:^(NSArray<AchievementData *> *list) {
-		_on_achievements_loaded(list);
+	// NOTE: use plain NSArray* here (no generics)
+	[proxy loadAchievementsWithCompletion:^(NSArray *list) {
+		_on_achievements_loaded((__bridge void *)list);
 	}];
 
 	return Signal(this, "achievements_loaded");
+}
+
+Signal GodotGameKit::load_achievement_names() {
+	if (!proxy) {
+		proxy = [GodotGameKitProxy shared];
+	}
+
+	[proxy loadAchievementNamesWithCompletion:^(NSArray *list) {
+		_on_achievement_names_loaded((__bridge void *)list);
+	}];
+
+	return Signal(this, "achievement_names_loaded");
 }
 
 GodotGameKit::GodotGameKit() {
@@ -118,10 +134,15 @@ void GodotGameKit::_on_achievement_reported(AchievementData *p_data) {
 	call_deferred("emit_signal", "achievement_reported", d);
 }
 
-void GodotGameKit::_on_achievements_loaded(const NSArray<AchievementData *> *p_list) {
+// p_list_raw is actually NSArray<AchievementData *> * from Swift/Obj-C
+void GodotGameKit::_on_achievements_loaded(void *p_list_raw) {
+	NSArray *list = (__bridge NSArray *)p_list_raw;
+
 	Array arr;
 
-	for (AchievementData *p_data in p_list) {
+	for (id obj in list) {
+		AchievementData *p_data = (AchievementData *)obj;
+
 		Dictionary d;
 		d["identifier"] = toGodotString(p_data.identifier);
 		d["percent_complete"] = p_data.percentComplete;
@@ -139,20 +160,21 @@ void GodotGameKit::_on_achievements_loaded(const NSArray<AchievementData *> *p_l
 	call_deferred("emit_signal", "achievements_loaded", arr);
 }
 
+// p_list_raw is actually NSArray<AchievementNameData *> * from Swift/Obj-C
 void GodotGameKit::_on_achievement_names_loaded(void *p_list_raw) {
-    NSArray *p_list = (__bridge NSArray *)p_list_raw;
+	NSArray *list = (__bridge NSArray *)p_list_raw;
 
-    Array arr;
+	Array arr;
 
-    for (id obj in p_list) {
-        AchievementNameData *p_data = (AchievementNameData *)obj;
+	for (id obj in list) {
+		AchievementNameData *p_data = (AchievementNameData *)obj;
 
-        Dictionary d;
-        d["identifier"] = toGodotString(p_data.identifier);
-        d["title"] = toGodotString(p_data.title);
-        d["error"] = toGodotString(p_data.error);
-        arr.push_back(d);
-    }
+		Dictionary d;
+		d["identifier"] = toGodotString(p_data.identifier);
+		d["title"] = toGodotString(p_data.title);
+		d["error"] = toGodotString(p_data.error);
+		arr.push_back(d);
+	}
 
-    call_deferred("emit_signal", "achievement_names_loaded", arr);
+	call_deferred("emit_signal", "achievement_names_loaded", arr);
 }
