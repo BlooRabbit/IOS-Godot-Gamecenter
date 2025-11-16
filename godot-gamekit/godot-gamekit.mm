@@ -15,15 +15,31 @@ static String toGodotString(NSString *src) {
 }
 
 void GodotGameKit::_bind_methods() {
-	// Methods exposed to GDScript
+	// Methods
 	ClassDB::bind_method(D_METHOD("initialize_game_center"), &GodotGameKit::initialize_game_center);
 	ClassDB::bind_method(D_METHOD("is_authenticated"), &GodotGameKit::is_authenticated);
+	ClassDB::bind_method(D_METHOD("load_achievement_names"), &GodotGameKit::load_achievement_names);
+	ClassDB::bind_method(
+			D_METHOD("report_achievement", "achievement_id", "percent_complete"),
+			&GodotGameKit::report_achievement,
+			DEFVAL(100.0));
+
+	ClassDB::bind_method(D_METHOD("load_achievements"), &GodotGameKit::load_achievements);
 
 	// Signals
-	// "data" is a Dictionary with keys:
-	//   "initialized" : bool
-	//   "error"       : String
 	ADD_SIGNAL(MethodInfo("game_center_initialized", PropertyInfo(Variant::DICTIONARY, "data")));
+
+	// achievement: Dictionary {
+	//   "identifier": String
+	//   "percent_complete": float
+	//   "completed": bool
+	//   "last_reported": float (Unix time) or absent
+	//   "error": String
+	// }
+	ADD_SIGNAL(MethodInfo("achievement_reported", PropertyInfo(Variant::DICTIONARY, "achievement")));
+	ADD_SIGNAL(MethodInfo("achievement_names_loaded", PropertyInfo(Variant::ARRAY, "names")));
+	// achievements: Array of Dictionaries with same keys as above
+	ADD_SIGNAL(MethodInfo("achievements_loaded", PropertyInfo(Variant::ARRAY, "achievements")));
 }
 
 Signal GodotGameKit::initialize_game_center() {
@@ -46,6 +62,34 @@ bool GodotGameKit::is_authenticated() const {
 	return [proxy isAuthenticated];
 }
 
+Signal GodotGameKit::report_achievement(String p_achievement_id, double p_percent_complete) {
+	if (!proxy) {
+		proxy = [GodotGameKitProxy shared];
+	}
+
+	NSString *identifier = fromGodotString(p_achievement_id);
+
+	[proxy reportAchievementWithIdentifier:identifier
+						   percentComplete:p_percent_complete
+								completion:^(AchievementData *data) {
+									_on_achievement_reported(data);
+								}];
+
+	return Signal(this, "achievement_reported");
+}
+
+Signal GodotGameKit::load_achievements() {
+	if (!proxy) {
+		proxy = [GodotGameKitProxy shared];
+	}
+
+	[proxy loadAchievementsWithCompletion:^(NSArray<AchievementData *> *list) {
+		_on_achievements_loaded(list);
+	}];
+
+	return Signal(this, "achievements_loaded");
+}
+
 GodotGameKit::GodotGameKit() {
 	proxy = [GodotGameKitProxy shared];
 }
@@ -56,4 +100,55 @@ void GodotGameKit::_on_initialized(InitializationData *p_data) {
 	result["error"] = toGodotString(p_data.error);
 
 	call_deferred("emit_signal", "game_center_initialized", result);
+}
+
+void GodotGameKit::_on_achievement_reported(AchievementData *p_data) {
+	Dictionary d;
+	d["identifier"] = toGodotString(p_data.identifier);
+	d["percent_complete"] = p_data.percentComplete;
+	d["completed"] = p_data.completed;
+
+	if (p_data.lastReportedDate) {
+		NSTimeInterval t = [p_data.lastReportedDate timeIntervalSince1970];
+		d["last_reported"] = (double)t;
+	}
+
+	d["error"] = toGodotString(p_data.error);
+
+	call_deferred("emit_signal", "achievement_reported", d);
+}
+
+void GodotGameKit::_on_achievements_loaded(const NSArray<AchievementData *> *p_list) {
+	Array arr;
+
+	for (AchievementData *p_data in p_list) {
+		Dictionary d;
+		d["identifier"] = toGodotString(p_data.identifier);
+		d["percent_complete"] = p_data.percentComplete;
+		d["completed"] = p_data.completed;
+
+		if (p_data.lastReportedDate) {
+			NSTimeInterval t = [p_data.lastReportedDate timeIntervalSince1970];
+			d["last_reported"] = (double)t;
+		}
+
+		d["error"] = toGodotString(p_data.error);
+		arr.push_back(d);
+	}
+
+	call_deferred("emit_signal", "achievements_loaded", arr);
+}
+
+void GodotGameKit::_on_achievement_names_loaded(const NSArray<AchievementNameData *> *p_list) {
+    Array arr;
+
+    for (AchievementNameData *p_data in p_list) {
+        Dictionary d;
+        d["identifier"] = toGodotString(p_data.identifier);
+        d["title"] = toGodotString(p_data.title);
+        d["error"] = toGodotString(p_data.error);
+        arr.push_back(d);
+    }
+
+    call_deferred("emit_signal", "achievement_names_loaded", arr);
 }

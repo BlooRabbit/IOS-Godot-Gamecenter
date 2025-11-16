@@ -6,24 +6,30 @@
 
 @class GodotGameKitProxy;
 @class InitializationData;
+@class AchievementData;
+@class AchievementNameData;
 
 class GodotGameKit : public RefCounted {
 	GDCLASS(GodotGameKit, RefCounted)
 
-		GodotGameKitProxy* proxy;
+		GodotGameKitProxy* proxy = nullptr;
 
 	static void _bind_methods();
 
-	// Called from the native side when Game Center initialization resolves.
 	void _on_initialized(InitializationData* p_data);
+	void _on_achievement_reported(AchievementData* p_data);
+	void _on_achievements_loaded(const NSArray<AchievementData*>* p_list);
+	void _on_achievement_names_loaded(const NSArray<AchievementNameData*>* p_list);
 
 public:
-	// Start Game Center initialization (auth flow).
-	// Emit a signal when _on_initialized is called.
+	// Game Center
 	Signal initialize_game_center();
-
-	// Simple helper to query Game Center auth state.
 	bool is_authenticated() const;
+
+	// Achievements
+	Signal report_achievement(String p_achievement_id, double p_percent_complete = 100.0);
+	Signal load_achievements();
+	Signal load_achievement_names();
 
 	GodotGameKit();
 };
