@@ -2,7 +2,6 @@
 
 #include "core/object/class_db.h"
 
-// For target "godot-gamekit", Swift header is "godot_gamekit-Swift.h"
 #import "godot_gamekit-Swift.h"
 
 @import GameKit;

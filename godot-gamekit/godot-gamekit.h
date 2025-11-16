@@ -10,7 +10,7 @@
 class GodotGameKit : public RefCounted {
 	GDCLASS(GodotGameKit, RefCounted)
 
-		GodotGameKitProxy* proxy = nullptr;
+		GodotGameKitProxy* proxy;
 
 	static void _bind_methods();
 
@@ -19,7 +19,7 @@ class GodotGameKit : public RefCounted {
 
 public:
 	// Start Game Center initialization (auth flow).
-	// The implementation can emit a signal when _on_initialized is called.
+	// Emit a signal when _on_initialized is called.
 	Signal initialize_game_center();
 
 	// Simple helper to query Game Center auth state.
