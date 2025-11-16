@@ -19,7 +19,7 @@ class GodotGameKit : public RefCounted {
 	void _on_initialized(InitializationData* p_data);
 	void _on_achievement_reported(AchievementData* p_data);
 	void _on_achievements_loaded(const NSArray<AchievementData*>* p_list);
-	void _on_achievement_names_loaded(const NSArray<AchievementNameData*>* p_list);
+	void _on_achievement_names_loaded(void* p_list);
 
 public:
 	// Game Center

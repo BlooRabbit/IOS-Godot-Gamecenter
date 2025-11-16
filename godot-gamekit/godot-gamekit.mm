@@ -139,10 +139,14 @@ void GodotGameKit::_on_achievements_loaded(const NSArray<AchievementData *> *p_l
 	call_deferred("emit_signal", "achievements_loaded", arr);
 }
 
-void GodotGameKit::_on_achievement_names_loaded(const NSArray<AchievementNameData *> *p_list) {
+void GodotGameKit::_on_achievement_names_loaded(void *p_list_raw) {
+    NSArray *p_list = (__bridge NSArray *)p_list_raw;
+
     Array arr;
 
-    for (AchievementNameData *p_data in p_list) {
+    for (id obj in p_list) {
+        AchievementNameData *p_data = (AchievementNameData *)obj;
+
         Dictionary d;
         d["identifier"] = toGodotString(p_data.identifier);
         d["title"] = toGodotString(p_data.title);
