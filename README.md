@@ -1,6 +1,8 @@
 # Godot GameKit
 
-This plugin provides an API to use the GameKit framework in Godot Engine. It is experimental and incomplete. But it is working in an actual published game project with several 10K users. 
+This plugin provides an API to use the GameKit framework in Godot Engine, mainly to report achievements. It was inspired by https://github.com/godot-sdk-integrations/godot-storekit2
+
+This plugin is experimental and incomplete. But it is working in an actual published game project with several 10K users. 
 
 ## Installation for Godot 4.5
 
