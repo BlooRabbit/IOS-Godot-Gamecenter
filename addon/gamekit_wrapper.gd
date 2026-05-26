@@ -45,20 +45,17 @@ func load_achievement_names() -> void:
 		return
 	_game_kit.load_achievement_names()
 
-
 func report_achievement(achievement_id: String, percent_complete: float = 100.0) -> void:
 	if not _game_kit:
 		push_warning("GameKit not initialized, cannot report achievement.")
 		return
 	_game_kit.report_achievement(achievement_id, percent_complete)
 
-
 func load_achievements() -> void:
 	if not _game_kit:
 		push_warning("GameKit not initialized, cannot load achievements.")
 		return
 	_game_kit.load_achievements()
-
 
 func _on_achievement_reported(achievement: Dictionary) -> void:
 	# achievement is a Dictionary :
@@ -70,11 +67,14 @@ func _on_achievement_reported(achievement: Dictionary) -> void:
 	#   "error": String
 	# }
 	achievement_reported.emit(achievement)
+	if achievement.has("error") and achievement["error"]=="":
+		load_achievements()
 
-
+# get a list of player achievement situation
 func _on_achievements_loaded(achievements: Array) -> void:
 	# achievements is an Array of the same dictionaries as above
 	achievements_loaded.emit(achievements)
 
+# get a list of all available achievements
 func _on_achievement_names_loaded(names: Array) -> void:
-	achievement_names_loaded.emit(names)
+	achievement_names_loaded.emit(names) 
